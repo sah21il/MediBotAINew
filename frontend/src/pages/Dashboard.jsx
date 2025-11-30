@@ -3,7 +3,7 @@ import axios from "axios";
 import { Link } from "react-router-dom";
 import DoctorAgent from "./DoctorAgent";
 
-const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const API = "https://effective-happiness-4wrjgp4xpw5cpw-8000.app.github.dev";
 
 function SmallAgentCard({ agent }) {
   const getAgentInfo = (id) => {
@@ -96,7 +96,7 @@ export default function Dashboard() {
     load();
 
     // WebSocket Updates
-    wsRef.current = new WebSocket("ws://localhost:8000/ws/agents");
+    wsRef.current = new WebSocket("wss://effective-happiness-4wrjgp4xpw5cpw-8000.app.github.dev/ws/agents");
     wsRef.current.onmessage = (evt) => {
       const msg = JSON.parse(evt.data);
 

@@ -20,7 +20,8 @@ export default function DoctorAgent() {
   // -------------------------------------------------
   const fetchVitals = async () => {
     try {
-      const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+      // Replace with your actual Codespaces URL
+      const API_URL = "https://effective-happiness-4wrjgp4xpw5cpw-8000.app.github.dev";
       const res = await axios.get(`${API_URL}/ingest/latest`);
       const vitals = res.data.latest;
 
