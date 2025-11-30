@@ -20,7 +20,8 @@ export default function DoctorAgent() {
   // -------------------------------------------------
   const fetchVitals = async () => {
     try {
-      const res = await axios.get("http://localhost:8000/ingest/latest");
+      const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+      const res = await axios.get(`${API_URL}/ingest/latest`);
       const vitals = res.data.latest;
 
       if (!vitals || Object.keys(vitals).length === 0) {

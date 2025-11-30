@@ -3,7 +3,7 @@ import axios from "axios";
 import { Link } from "react-router-dom";
 import DoctorAgent from "./DoctorAgent";
 
-const API = "http://localhost:8000";
+const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 function SmallAgentCard({ agent }) {
   const getAgentInfo = (id) => {
