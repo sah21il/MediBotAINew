@@ -1,0 +1,96 @@
+version: '3.8'
+
+services:
+  # Backend API Service
+  backend:
+    build:
+      context: ./MediBotAINew-main
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+      - DATABASE_URL=sqlite:///./medibot.db
+    volumes:
+      - ./MediBotAINew-main:/app
+      - backend_data:/app/data
+    depends_on:
+      - ollama
+    restart: unless-stopped
+    networks:
+      - medibot-network
+
+  # Frontend Service
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - medibot-network
+
+  # Ollama AI Service
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_ORIGINS=*
+    restart: unless-stopped
+    networks:
+      - medibot-network
+    # Uncomment for GPU support
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  # Database Service (Optional - for production)
+  # postgres:
+  #   image: postgres:15
+  #   environment:
+  #     POSTGRES_DB: medibot
+  #     POSTGRES_USER: medibot
+  #     POSTGRES_PASSWORD: your-secure-password
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   ports:
+  #     - "5432:5432"
+  #   restart: unless-stopped
+  #   networks:
+  #     - medibot-network
+
+  # Redis Cache (Optional)
+  # redis:
+  #   image: redis:7-alpine
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - redis_data:/data
+  #   restart: unless-stopped
+  #   networks:
+  #     - medibot-network
+
+volumes:
+  backend_data:
+  ollama_data:
+  # postgres_data:
+  # redis_data:
+
+networks:
+  medibot-network:
+    driver: bridge
