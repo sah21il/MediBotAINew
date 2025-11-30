@@ -1,0 +1,187 @@
+{
+  "sample_patients": [
+    {
+      "id": 1,
+      "name": "John Doe",
+      "age": 45,
+      "medical_history": "Hypertension, Type 2 Diabetes",
+      "vital_signs": {
+        "resp_rate": 18,
+        "spo2": 98,
+        "bp_sys": 140,
+        "pulse": 85,
+        "temp": 37.2,
+        "consciousness": "Alert"
+      },
+      "expected_analysis": "RN Review - Elevated blood pressure"
+    },
+    {
+      "id": 2,
+      "name": "Jane Smith",
+      "age": 32,
+      "medical_history": "Asthma",
+      "vital_signs": {
+        "resp_rate": 28,
+        "spo2": 90,
+        "bp_sys": 180,
+        "pulse": 130,
+        "temp": 38.5,
+        "consciousness": "Voice"
+      },
+      "expected_analysis": "MER Call - Multiple critical vitals detected"
+    },
+    {
+      "id": 3,
+      "name": "Robert Johnson",
+      "age": 67,
+      "medical_history": "Heart Disease, COPD",
+      "vital_signs": {
+        "resp_rate": 22,
+        "spo2": 92,
+        "bp_sys": 160,
+        "pulse": 95,
+        "temp": 37.8,
+        "consciousness": "Alert"
+      },
+      "expected_analysis": "MDT Review - Multiple abnormal vitals"
+    },
+    {
+      "id": 4,
+      "name": "Emily Davis",
+      "age": 28,
+      "medical_history": "Healthy",
+      "vital_signs": {
+        "resp_rate": 16,
+        "spo2": 99,
+        "bp_sys": 115,
+        "pulse": 72,
+        "temp": 36.8,
+        "consciousness": "Alert"
+      },
+      "expected_analysis": "Normal Observation - All vitals within range"
+    }
+  ],
+  "test_scenarios": [
+    {
+      "scenario": "Critical Emergency",
+      "description": "Patient with multiple life-threatening vital signs",
+      "input": {
+        "resp_rate": 35,
+        "spo2": 85,
+        "bp_sys": 200,
+        "pulse": 150,
+        "temp": 40.0,
+        "consciousness": "Unresponsive"
+      },
+      "expected_output": "MER Call",
+      "priority": "Critical"
+    },
+    {
+      "scenario": "Moderate Concern",
+      "description": "Patient with some abnormal but not critical vitals",
+      "input": {
+        "resp_rate": 25,
+        "spo2": 94,
+        "bp_sys": 150,
+        "pulse": 100,
+        "temp": 37.5,
+        "consciousness": "Alert"
+      },
+      "expected_output": "MDT Review",
+      "priority": "Medium"
+    },
+    {
+      "scenario": "Single Abnormality",
+      "description": "Patient with one concerning vital sign",
+      "input": {
+        "resp_rate": 20,
+        "spo2": 98,
+        "bp_sys": 170,
+        "pulse": 80,
+        "temp": 37.0,
+        "consciousness": "Alert"
+      },
+      "expected_output": "RN Review",
+      "priority": "Low"
+    },
+    {
+      "scenario": "Normal Patient",
+      "description": "Healthy patient with all normal vitals",
+      "input": {
+        "resp_rate": 18,
+        "spo2": 98,
+        "bp_sys": 120,
+        "pulse": 75,
+        "temp": 37.0,
+        "consciousness": "Alert"
+      },
+      "expected_output": "Normal Observation",
+      "priority": "None"
+    }
+  ],
+  "api_test_cases": [
+    {
+      "endpoint": "/api/health/analyze",
+      "method": "POST",
+      "test_name": "Valid Vitals Analysis",
+      "payload": {
+        "resp_rate": 20,
+        "spo2": 95,
+        "bp_sys": 130,
+        "pulse": 80,
+        "temp": 37.2,
+        "consciousness": "Alert"
+      },
+      "expected_status": 200,
+      "expected_fields": ["analysis"]
+    },
+    {
+      "endpoint": "/api/health/analyze",
+      "method": "POST", 
+      "test_name": "Invalid Vitals - Missing Field",
+      "payload": {
+        "resp_rate": 20,
+        "spo2": 95,
+        "bp_sys": 130,
+        "temp": 37.2,
+        "consciousness": "Alert"
+      },
+      "expected_status": 422,
+      "expected_error": "Field required"
+    },
+    {
+      "endpoint": "/ingest/latest",
+      "method": "GET",
+      "test_name": "Get Latest Mock Data",
+      "payload": null,
+      "expected_status": 200,
+      "expected_fields": ["latest"]
+    },
+    {
+      "endpoint": "/",
+      "method": "GET",
+      "test_name": "Health Check",
+      "payload": null,
+      "expected_status": 200,
+      "expected_response": {"message": "MediBot Backend Running"}
+    }
+  ],
+  "performance_benchmarks": {
+    "api_response_time": {
+      "target": "< 500ms",
+      "critical_threshold": "< 2000ms"
+    },
+    "ai_inference_time": {
+      "target": "< 3000ms", 
+      "critical_threshold": "< 10000ms"
+    },
+    "concurrent_users": {
+      "target": "100 users",
+      "maximum": "500 users"
+    },
+    "data_throughput": {
+      "target": "1000 requests/minute",
+      "maximum": "5000 requests/minute"
+    }
+  }
+}
