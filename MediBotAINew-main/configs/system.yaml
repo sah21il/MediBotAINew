@@ -1,0 +1,8 @@
+ingest_agent:
+  agent_id: "ingest_agent"
+  poll_interval: 5
+  api_sources:
+    heart_rate: "https://example.com/heart-rate"
+    blood_pressure: "https://example.com/bp"
+    glucose: "https://example.com/glucose"
+    spo2: "https://example.com/spo2"
