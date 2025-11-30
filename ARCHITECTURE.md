@@ -240,5 +240,5 @@ Pipeline Stages:
 ---
 
 **Document Version**: 1.0  
-**Last Updated**: November 2024  
+**Last Updated**: November 2025  
 **Maintained By**: MediBot AI Development Team
