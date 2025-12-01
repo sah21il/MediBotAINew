@@ -11,6 +11,8 @@ from agents.ingest_agent import IngestAgent
 from agents.doctor_assistant_agent import DoctorAssistantAgent
 from coordinator.message_bus import MessageBus
 from coordinator.message import Message
+from reports_agent import setup_reports_agent
+from reminders_agent import setup_reminders_agent
 
 # Initialize FastAPI
 app = FastAPI(title="MediBot AI Backend")
@@ -33,6 +35,12 @@ doctor_assistant = DoctorAssistantAgent(message_bus)
 message_bus.register("health_agent", health_agent)
 message_bus.register("ingest_agent", ingest_agent)
 message_bus.register("doctor_assistant", doctor_assistant)
+
+# Setup Reports Agent
+setup_reports_agent(app)
+
+# Setup Reminders Agent
+setup_reminders_agent(app)
 
 # ---------------------------
 # Pydantic Models for API
@@ -87,7 +95,7 @@ def ingest_data(data: dict):
 def latest_data():
     try:
         # Fetch from real mock APIs for base values
-        user_response = requests.get("https://jsonplaceholder.typicode.com/users/1", timeout=3)
+        user_response = requests.get("https://jsonplaceholder.typicode.com/users/1", timeout=1)
         
         if user_response.status_code == 200:
             user_data = user_response.json()
@@ -102,24 +110,35 @@ def latest_data():
     # Create realistic variations using time-based sine waves + API seed
     current_time = time.time()
     
-    # Create values that will show deviations (some normal, some abnormal)
-    vitals = {
-        "heart_rate": round(75 + base_seed % 30 + 
-                           15 * math.sin(current_time / 30) + 
-                           random.uniform(-5, 5), 1),  # Can go 50-120
-        
-        "bp": round(120 + base_seed % 40 + 
-                   25 * math.sin(current_time / 45) + 
-                   random.uniform(-10, 10), 1),  # Can go 85-185
-        
-        "spo2": round(96 + base_seed % 6 + 
-                     3 * math.sin(current_time / 60) + 
-                     random.uniform(-2, 2), 1),  # Can go 91-105
-        
-        "glucose": round(100 + base_seed % 50 + 
-                        30 * math.sin(current_time / 120) + 
-                        random.uniform(-15, 15), 1)  # Can go 55-195
-    }
+    # Occasionally generate critical values for alarm testing
+    critical_chance = random.random()
+    
+    if critical_chance < 0.1:  # 10% chance of critical values
+        vitals = {
+            "heart_rate": random.choice([40, 140]),  # Critical values
+            "bp": random.choice([60, 200]),
+            "spo2": random.choice([80, 100]),
+            "glucose": random.choice([40, 300])
+        }
+    else:
+        # Normal realistic medical values
+        vitals = {
+            "heart_rate": max(50, min(120, round(75 + 
+                               10 * math.sin(current_time / 30) + 
+                               random.uniform(-8, 8), 1))),  # 50-120 bpm
+            
+            "bp": max(80, min(180, round(120 + 
+                       15 * math.sin(current_time / 45) + 
+                       random.uniform(-12, 12), 1))),  # 80-180 mmHg
+            
+            "spo2": max(88, min(100, round(97 + 
+                         2 * math.sin(current_time / 60) + 
+                         random.uniform(-3, 2), 1))),  # 88-100%
+            
+            "glucose": max(60, min(200, round(100 + 
+                            20 * math.sin(current_time / 90) + 
+                            random.uniform(-15, 25), 1)))  # 60-200 mg/dL
+        }
     
     print(f"Generated vitals with deviations: {vitals}")
     return {"latest": vitals}
