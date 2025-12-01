@@ -1,44 +1,32 @@
 version: '3.8'
 
 services:
-  # Backend API Service
   backend:
-    build:
+    build: 
       context: ./MediBotAINew-main
       dockerfile: Dockerfile
     ports:
       - "8000:8000"
     environment:
       - OLLAMA_HOST=http://ollama:11434
-      - DATABASE_URL=sqlite:///./medibot.db
-    volumes:
-      - ./MediBotAINew-main:/app
-      - backend_data:/app/data
+      - OLLAMA_MODEL=phi3:mini
     depends_on:
       - ollama
-    restart: unless-stopped
-    networks:
-      - medibot-network
+    volumes:
+      - ./MediBotAINew-main:/app
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
-  # Frontend Service
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
     ports:
       - "5173:5173"
-    environment:
-      - VITE_API_URL=http://localhost:8000
     volumes:
       - ./frontend:/app
       - /app/node_modules
-    depends_on:
-      - backend
-    restart: unless-stopped
-    networks:
-      - medibot-network
+    command: npm run dev -- --host 0.0.0.0
 
-  # Ollama AI Service
   ollama:
     image: ollama/ollama:latest
     ports:
@@ -47,50 +35,7 @@ services:
       - ollama_data:/root/.ollama
     environment:
       - OLLAMA_ORIGINS=*
-    restart: unless-stopped
-    networks:
-      - medibot-network
-    # Uncomment for GPU support
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1
-    #           capabilities: [gpu]
-
-  # Database Service (Optional - for production)
-  # postgres:
-  #   image: postgres:15
-  #   environment:
-  #     POSTGRES_DB: medibot
-  #     POSTGRES_USER: medibot
-  #     POSTGRES_PASSWORD: your-secure-password
-  #   volumes:
-  #     - postgres_data:/var/lib/postgresql/data
-  #   ports:
-  #     - "5432:5432"
-  #   restart: unless-stopped
-  #   networks:
-  #     - medibot-network
-
-  # Redis Cache (Optional)
-  # redis:
-  #   image: redis:7-alpine
-  #   ports:
-  #     - "6379:6379"
-  #   volumes:
-  #     - redis_data:/data
-  #   restart: unless-stopped
-  #   networks:
-  #     - medibot-network
+    command: sh -c "ollama serve & sleep 10 && ollama pull phi3:mini && wait"
 
 volumes:
-  backend_data:
   ollama_data:
-  # postgres_data:
-  # redis_data:
-
-networks:
-  medibot-network:
-    driver: bridge
