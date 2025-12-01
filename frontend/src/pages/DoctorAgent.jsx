@@ -1,16 +1,19 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
+import { Link } from "react-router-dom";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer,
   LineChart, Line, Cell
 } from "recharts";
+import AlarmSystem from '../components/AlarmSystem';
 
-export default function DoctorAgent() {
+export default function DoctorAgent({ embedded = false }) {
   const [graphData, setGraphData] = useState([]);
   const [historyData, setHistoryData] = useState([]);
+  const [currentVitals, setCurrentVitals] = useState(null);
 
   useEffect(() => {
-    const interval = setInterval(fetchVitals, 3000);
+    const interval = setInterval(fetchVitals, 2000);
     fetchVitals(); // initial fetch
     return () => clearInterval(interval);
   }, []);
@@ -20,8 +23,9 @@ export default function DoctorAgent() {
   // -------------------------------------------------
   const fetchVitals = async () => {
     try {
-      // Replace with your actual Codespaces URL
-      const API_URL = "https://effective-happiness-4wrjgp4xpw5cpw-8000.app.github.dev";
+      console.log("Fetching from Codespaces URL...");
+      const API_URL = "http://localhost:8000";
+      console.log("API URL:", API_URL);
       const res = await axios.get(`${API_URL}/ingest/latest`);
       const vitals = res.data.latest;
 
@@ -74,6 +78,7 @@ export default function DoctorAgent() {
       });
 
       setGraphData(chart);
+      setCurrentVitals(vitals);
     } catch (err) {
       console.error("Error fetching vitals:", err);
     }
@@ -85,45 +90,71 @@ export default function DoctorAgent() {
     return "#27ae60";                        // Green
   };
 
-  return (
-    <div style={{ padding: "20px" }}>
-      <h2>Doctor Agent — Live Vitals Monitoring</h2>
-      <p style={{ color: "#888" }}>
-        📡 Receiving data from external APIs every <b>3 seconds</b>...
-      </p>
-      
-      {/* Debug info */}
-      <div style={{ background: "#242424", padding: "10px", margin: "10px 0", borderRadius: "5px" }}>
-        <strong>Current Vitals:</strong><br/>
-        {graphData.map(item => (
-          <div key={item.name}>
-            {item.name}: {item.actualValue} (Deviation: {item.value}, Status: {item.status})
-          </div>
-        ))}
-      </div>
+  const handleAlarmAcknowledge = (alarmId) => {
+    console.log('Alarm acknowledged:', alarmId);
+  };
 
-      {/* ---------------- BAR CHART ---------------- */}
-      <h3>Threshold Deviation Chart</h3>
-      <ResponsiveContainer width="100%" height={300}>
-        <BarChart data={graphData}>
-          <XAxis dataKey="name" />
-          <YAxis />
-          <Tooltip formatter={(value, name, props) => [
-            `Deviation: ${value}`, 
-            `Actual: ${props.payload.actualValue}`
-          ]} />
-          <Legend />
-          <Bar dataKey="value">
-            {graphData.map((entry, index) => (
-              <Cell key={`cell-${index}`} fill={barColor(entry.status)} />
-            ))}
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
+  return (
+    <div style={{ 
+      padding: embedded ? "10px" : "20px", 
+      height: embedded ? "100%" : "100vh", 
+      width: "100%", 
+      boxSizing: "border-box",
+      background: embedded ? "transparent" : "linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%)",
+      overflowY: "auto",
+      display: "flex",
+      flexDirection: "column"
+    }}>
+      {!embedded && (
+        <AlarmSystem 
+          vitals={currentVitals} 
+          onAcknowledge={handleAlarmAcknowledge} 
+        />
+      )}
+      {!embedded && (
+        <div style={{ 
+          position: 'absolute', 
+          top: '20px', 
+          right: '20px', 
+          zIndex: 1000 
+        }}>
+          <Link 
+            to="/" 
+            style={{
+              backgroundColor: '#6c757d',
+              color: 'white',
+              padding: '10px 20px',
+              borderRadius: '8px',
+              textDecoration: 'none',
+              fontWeight: 'bold',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              transition: 'all 0.3s ease'
+            }}
+            onMouseOver={(e) => {
+              e.target.style.backgroundColor = '#28a745';
+              e.target.style.transform = 'translateY(-2px)';
+            }}
+            onMouseOut={(e) => {
+              e.target.style.backgroundColor = '#6c757d';
+              e.target.style.transform = 'translateY(0)';
+            }}
+          >
+            ← Back to Dashboard
+          </Link>
+        </div>
+      )}
+      
+      <h2 style={{ marginBottom: '20px' }}>Doctor Agent — Live Vitals Monitoring</h2>
+      <p style={{ color: "#888", marginTop: 0, textAlign: "center", fontSize: "16px" }}>
+        🏥 Real-time Patient Monitoring Dashboard
+      </p>
 
       {/* ---------------- LINE CHART ---------------- */}
-      <h3 style={{ marginTop: "40px" }}>Live Vitals Over Time</h3>
-      <ResponsiveContainer width="100%" height={350}>
+      <h3 style={{ marginTop: "20px", marginBottom: "15px", color: "#e9ecef" }}>Live Vitals Over Time</h3>
+      <div style={{ width: "100%", height: embedded ? "350px" : "450px" }}>
+        <ResponsiveContainer width="100%" height="100%">
         <LineChart data={historyData}>
           <XAxis dataKey="time" />
           <YAxis />
@@ -135,7 +166,8 @@ export default function DoctorAgent() {
           <Line type="monotone" dataKey="spo2" name="SpO₂" stroke="#27ae60" strokeWidth={2} />
           <Line type="monotone" dataKey="glucose" name="Glucose" stroke="#9b59b6" strokeWidth={2} />
         </LineChart>
-      </ResponsiveContainer>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }
