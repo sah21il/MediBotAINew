@@ -1,6 +1,7 @@
 # agents/doctor_assistant_agent.py
 import requests
 import json
+from context_filter import is_medical_context, filter_response, create_medical_prompt, REJECTION_MESSAGE
 
 class DoctorAssistantAgent:
     def __init__(self, message_bus=None):
@@ -25,8 +26,17 @@ class DoctorAssistantAgent:
         spo2 = vitals.get("spo2", 0)
         glucose = vitals.get("glucose", 0)
         
-        # Create prompt for Ollama
-        prompt = f"""You are a medical AI assistant. Analyze these vital signs and provide a structured medical assessment:
+        # Create medical-focused prompt
+        context = f"Heart Rate: {heart_rate} bpm, BP: {bp} mmHg, SpO2: {spo2}%, Glucose: {glucose} mg/dL"
+        prompt = create_medical_prompt(
+            f"Analyze these vital signs: {context}",
+            context
+        )
+        
+        # Original prompt for structured output
+        prompt = f"""You are MediBot AI, a specialized medical assistant. ONLY respond to medical and health questions.
+
+Analyze these vital signs and provide a structured medical assessment:
 
 Vital Signs:
 - Heart Rate: {heart_rate} bpm

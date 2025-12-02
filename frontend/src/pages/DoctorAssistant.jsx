@@ -16,8 +16,57 @@ export default function DoctorAssistant() {
   const [vitals, setVitals] = useState(null);
   const [analysisStatus, setAnalysisStatus] = useState("idle");
   const messagesEndRef = useRef(null);
+ 
+ const [isListening, setIsListening] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [autoSpeak, setAutoSpeak] = useState(false);
+  const [language, setLanguage] = useState('en-US');
+  const recognitionRef = useRef(null);
+  const synthRef = useRef(window.speechSynthesis);
 
   useEffect(() => {
+    // Update welcome message based on language
+    if (language === 'hi-IN' && messages.length === 1) {
+      setMessages([{
+        id: 1,
+        type: 'bot',
+        content: 'नमस्ते! मैं आपका AI डॉक्टर सहायक हूं। मैं रोगी के vital signs का विश्लेषण करने, चिकित्सा प्रश्नों के उत्तर देने और नैदानिक जानकारी प्रदान करने में मदद कर सकता हूं। आज मैं आपकी कैसे सहायता कर सकता हूं?',
+        timestamp: new Date()
+      }]);
+    } else if (language === 'en-US' && messages.length === 1 && messages[0].content.includes('नमस्ते')) {
+      setMessages([{
+        id: 1,
+        type: 'bot',
+        content: "Hello! I'm your AI Doctor Assistant. I can help analyze patient vitals, answer medical questions, and provide clinical insights. How can I assist you today?",
+        timestamp: new Date()
+      }]);
+    }
+  }, [language]);
+
+  useEffect(() => {
+    // Initialize speech recognition
+    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      recognitionRef.current = new SpeechRecognition();
+      recognitionRef.current.continuous = false;
+      recognitionRef.current.interimResults = false;
+      recognitionRef.current.lang = language;
+
+      recognitionRef.current.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        setInputMessage(transcript);
+        setIsListening(false);
+      };
+
+      recognitionRef.current.onerror = () => {
+        setIsListening(false);
+      };
+
+      recognitionRef.current.onend = () => {
+        setIsListening(false);
+      };
+    }
+
     // Fetch vitals every 10 seconds for analysis updates
     const interval = setInterval(fetchVitals, 10000);
     fetchVitals(); // initial fetch
@@ -29,7 +78,7 @@ export default function DoctorAssistant() {
       const reportMessage = {
         id: Date.now(),
         type: 'bot',
-        content: `📄 **Report Analysis Loaded**\n\n**Report:** ${report.name}\n**Type:** ${report.type}\n\n**AI Analysis:**\n${report.analysis}\n\nI'm ready to discuss this report with you. What would you like to know?`,
+        content: `📄 Report Analysis Loaded\n\nReport: ${report.name}\nType: ${report.type}\n\nAI Analysis:\n${report.analysis}\n\nI'm ready to discuss this report with you. What would you like to know?`,
         timestamp: new Date()
       };
       setMessages(prev => [...prev, reportMessage]);
@@ -50,7 +99,12 @@ export default function DoctorAssistant() {
       localStorage.removeItem('doctorNotification'); // Clear after use
     }
     
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      if (synthRef.current) {
+        synthRef.current.cancel();
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -135,21 +189,21 @@ export default function DoctorAssistant() {
           else if (glucose < 70) alerts.push(`🔴 Hypoglycemia: ${glucose} mg/dL`);
           
           clinicalAssessment = alerts.length > 0 ? 
-            `\n⚠️ **Clinical Alerts:**\n${alerts.join('\n')}\n` : 
-            "\n✅ **All parameters within normal limits**\n";
+            `\n⚠️ Clinical Alerts:\n${alerts.join('\n')}\n` : 
+            "\n✅ All parameters within normal limits\n";
           
-          botResponse = `📊 **COMPREHENSIVE VITAL SIGNS ANALYSIS**
+          botResponse = `📊 COMPREHENSIVE VITAL SIGNS ANALYSIS
 
-**Current Readings:**
+Current Readings:
 • Heart Rate: ${hr} bpm ${hr >= 60 && hr <= 100 ? '✅' : '⚠️'}
 • Blood Pressure: ${bp} mmHg ${bp >= 90 && bp <= 140 ? '✅' : '⚠️'}
 • SpO₂: ${spo2}% ${spo2 >= 95 ? '✅' : '⚠️'}
 • Glucose: ${glucose} mg/dL ${glucose >= 70 && glucose <= 140 ? '✅' : '⚠️'}
 ${clinicalAssessment}
-🤖 **AI Clinical Assessment:**
+🤖 AI Clinical Assessment:
 ${analysisRes.data.analysis}
 
-**Recommendations:**
+Recommendations:
 • Continue monitoring trends
 • Document any symptomatic changes
 • Consider additional diagnostics if abnormal
@@ -157,21 +211,31 @@ ${analysisRes.data.analysis}
 
 Would you like specific management recommendations for any abnormal values?`;
         } else {
-          botResponse = "📊 **No Current Vital Signs Available**\n\nThe patient monitoring system appears to be offline or no recent data is available.\n\n**Troubleshooting Steps:**\n• Verify monitoring equipment connections\n• Check if sensors are properly attached\n• Ensure data transmission is active\n• Contact technical support if issues persist\n\n**I can still help with:**\n• Clinical protocols and guidelines\n• Medication information\n• Symptom assessment\n• Emergency procedures\n\nWhat would you like to know about?";
+          botResponse = "📊 No Current Vital Signs Available\n\nThe patient monitoring system appears to be offline or no recent data is available.\n\nTroubleshooting Steps:\n• Verify monitoring equipment connections\n• Check if sensors are properly attached\n• Ensure data transmission is active\n• Contact technical support if issues persist\n\nI can still help with:\n• Clinical protocols and guidelines\n• Medication information\n• Symptom assessment\n• Emergency procedures\n\nWhat would you like to know about?";
         }
       } else {
         // Enhanced medical assistant responses with better pattern matching
         botResponse = generateMedicalResponse(inputMessage);
       }
 
+      // Translate to Hindi if Hindi language is selected
+      if (language === 'hi-IN') {
+        botResponse = await translateToHindi(botResponse);
+      }
+
       const botMessage = {
         id: Date.now() + 1,
         type: 'bot',
-        content: botResponse,
+        content: removeMarkdown(botResponse),
         timestamp: new Date()
       };
 
       setMessages(prev => [...prev, botMessage]);
+      
+      // Auto-speak bot response if enabled
+      if (autoSpeak) {
+        speakText(botResponse);
+      }
     } catch (error) {
       const errorMessage = {
         id: Date.now() + 1,
@@ -183,6 +247,11 @@ Would you like specific management recommendations for any abnormal values?`;
     } finally {
       setIsTyping(false);
     }
+  };
+
+  const removeMarkdown = (text) => {
+    // Remove ** bold markers
+    return text.replace(/\*\*/g, '');
   };
 
   const generateMedicalResponse = (input) => {
@@ -514,27 +583,27 @@ ${urgency}
       }
     }
     
-    // General response with medical context
+    // General response with medical context - will be translated to Hindi if needed
     return `I understand you're asking about: "${input}"
 
-🏥 **Let me help with specific medical information:**
+🏥 **Medical Assistant Help:**
 
-**For Blood Pressure Questions:**
+**Blood Pressure Questions:**
 • "Is 180/120 dangerous?" - Crisis assessment
 • "Normal BP ranges" - Classification guide
 • "Hypertension treatment" - Management options
 
-**For Vital Signs:**
+**Vital Signs:**
 • "Heart rate 45 bpm" - Bradycardia evaluation
 • "SpO2 88%" - Hypoxemia assessment
 • "Temperature 39°C" - Fever management
 
-**For Symptoms:**
+**Symptoms:**
 • "Chest pain assessment" - Cardiac evaluation
 • "Shortness of breath" - Respiratory causes
 • "Dizziness causes" - Differential diagnosis
 
-**Try being specific with your question for detailed clinical guidance!**`;
+Try being specific with your question for detailed clinical guidance!`;
   };
 
   const handleKeyPress = (e) => {
@@ -542,6 +611,134 @@ ${urgency}
       e.preventDefault();
       sendMessage();
     }
+  };
+
+  const startListening = () => {
+    if (recognitionRef.current && !isListening) {
+      recognitionRef.current.lang = language;
+      setIsListening(true);
+      recognitionRef.current.start();
+    }
+  };
+
+  const stopListening = () => {
+    if (recognitionRef.current && isListening) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+    }
+  };
+
+  const speakText = (text) => {
+    if (synthRef.current && text) {
+      synthRef.current.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = language;
+      utterance.rate = 1.0;
+      utterance.pitch = 1.0;
+      utterance.volume = 1.0;
+      utterance.onstart = () => setIsSpeaking(true);
+      utterance.onend = () => setIsSpeaking(false);
+      synthRef.current.speak(utterance);
+    }
+  };
+
+  const stopSpeaking = () => {
+    if (synthRef.current) {
+      synthRef.current.cancel();
+      setIsSpeaking(false);
+    }
+  };
+
+  const translateToHindi = async (text) => {
+    // Check if already in Hindi
+    const hindiPattern = /[\u0900-\u097F]/;
+    if (hindiPattern.test(text) && text.split(' ').filter(word => hindiPattern.test(word)).length > 3) {
+      return text; // Already mostly in Hindi
+    }
+
+    // For default help message
+    if (text.includes('Medical Assistant Help')) {
+      return `मैं समझता हूं आप पूछ रहे हैं: "${text.match(/"(.+?)"/)?.[1] || ''}"
+
+🏥 **चिकित्सा सहायक मदद:**
+
+**रक्तचाप प्रश्न:**
+• "क्या 180/120 खतरनाक है?" - संकट मूल्यांकन
+• "सामान्य BP सीमा" - वर्गीकरण मार्गदर्शिका
+• "उच्च रक्तचाप उपचार" - प्रबंधन विकल्प
+
+**Vital Signs:**
+• "हृदय गति 45 bpm" - धीमी हृदय गति मूल्यांकन
+• "SpO2 88%" - ऑक्सीजन कमी मूल्यांकन
+• "तापमान 39°C" - बुखार प्रबंधन
+
+**लक्षण:**
+• "सीने में दर्द मूल्यांकन" - हृदय जांच
+• "सांस लेने में तकलीफ" - श्वसन कारण
+• "चक्कर आने के कारण" - विभेदक निदान
+
+विस्तृत नैदानिक मार्गदर्शन के लिए विशिष्ट प्रश्न पूछें!`;
+    }
+
+    // Simple translation mapping for common medical terms
+    const translations = {
+      'Hello': 'नमस्ते',
+      'Hi': 'नमस्कार',
+      'Good day': 'शुभ दिन',
+      'How can I help': 'मैं कैसे मदद कर सकता हूं',
+      'patient care': 'रोगी देखभाल',
+      'medical analysis': 'चिकित्सा विश्लेषण',
+      'clinical decisions': 'नैदानिक निर्णय',
+      'Heart Rate': 'हृदय गति',
+      'Blood Pressure': 'रक्तचाप',
+      'Normal Range': 'सामान्य सीमा',
+      'Hypertension': 'उच्च रक्तचाप',
+      'Hypotension': 'निम्न रक्तचाप',
+      'Bradycardia': 'धीमी हृदय गति',
+      'Tachycardia': 'तेज हृदय गति',
+      'Oxygen': 'ऑक्सीजन',
+      'Glucose': 'ग्लूकोज',
+      'Temperature': 'तापमान',
+      'Emergency': 'आपातकाल',
+      'Medication': 'दवा',
+      'Treatment': 'उपचार',
+      'Symptoms': 'लक्षण',
+      'Diagnosis': 'निदान',
+      'Doctor': 'डॉक्टर',
+      'Patient': 'रोगी',
+      'Hospital': 'अस्पताल',
+      'Chest pain': 'सीने में दर्द',
+      'Fever': 'बुखार',
+      'Cough': 'खांसी',
+      'Headache': 'सिरदर्द',
+      'Dizziness': 'चक्कर आना'
+    };
+
+    // Basic translation for common phrases
+    let translated = text;
+    for (const [eng, hindi] of Object.entries(translations)) {
+      const regex = new RegExp(eng, 'gi');
+      translated = translated.replace(regex, hindi);
+    }
+
+    // If mostly English, provide Hindi response
+    if (translated === text) {
+      // Common medical responses in Hindi
+      if (text.includes('Hello') || text.includes('Hi')) {
+        return 'नमस्ते! मैं आपका AI डॉक्टर सहायक हूं। मैं रोगी के vital signs का विश्लेषण करने, चिकित्सा प्रश्नों के उत्तर देने और नैदानिक जानकारी प्रदान करने में मदद कर सकता हूं। आज मैं आपकी कैसे सहायता कर सकता हूं?';
+      }
+      if (text.includes('help')) {
+        return '🏥 **AI चिकित्सा सहायक क्षमताएं**\n\n**रोगी निगरानी:**\n• वास्तविक समय vital signs विश्लेषण\n• नैदानिक मापदंडों की व्याख्या\n• जोखिम स्तरीकरण और अलर्ट\n\n**नैदानिक निर्णय समर्थन:**\n• साक्ष्य-आधारित सिफारिशें\n• विभेदक निदान सहायता\n• उपचार प्रोटोकॉल मार्गदर्शन\n\n**आपातकालीन प्रोटोकॉल:**\n• सेप्सिस स्क्रीनिंग\n• कार्डियक अरेस्ट एल्गोरिदम\n• स्ट्रोक मूल्यांकन\n\nमुझसे कुछ भी पूछें!';
+      }
+      if (text.includes('blood pressure') || text.includes('BP')) {
+        return '🩸 **रक्तचाप प्रबंधन**\n\n**वर्गीकरण:**\n• सामान्य: <120/80 mmHg\n• उच्च रक्तचाप चरण 1: 130-139/80-89 mmHg\n• उच्च रक्तचाप चरण 2: ≥140/90 mmHg\n• संकट: >180/120 mmHg\n\n**उच्च रक्तचाप संकट प्रबंधन:**\n• तत्काल BP में 10-20% की कमी\n• IV दवाएं\n• अंग क्षति की निगरानी\n\n**निम्न रक्तचाप (<90 mmHg):**\n• कारण: निर्जलीकरण, रक्त हानि, सेप्सिस\n• उपचार: द्रव पुनर्जीवन\n\nऔर जानकारी के लिए पूछें!';
+      }
+      if (text.includes('heart rate') || text.includes('pulse')) {
+        return '❤️ **हृदय गति विश्लेषण**\n\n**सामान्य सीमा:** 60-100 bpm\n\n**धीमी हृदय गति (<60 bpm):**\n• कारण: एथलेटिक कंडीशनिंग, बीटा-ब्लॉकर्स, हृदय ब्लॉक\n• लक्षण: थकान, चक्कर आना\n• उपचार: एट्रोपिन, पेसिंग यदि लक्षणात्मक\n\n**तेज हृदय गति (>100 bpm):**\n• कारण: बुखार, निर्जलीकरण, चिंता, अतालता\n• प्रबंधन: अंतर्निहित कारण का इलाज\n\n**महत्वपूर्ण मान:**\n• <40 bpm या >150 bpm तत्काल ध्यान देने की आवश्यकता है\n• ECG पर विचार करें';
+      }
+    }
+
+    return translated;
   };
 
   return (
@@ -580,9 +777,28 @@ ${urgency}
             <h2 style={{ margin: 0, color: "#e9ecef", fontSize: "24px" }}>
               AI Doctor Assistant
             </h2>
-            <p style={{ margin: 0, color: "#adb5bd", fontSize: "14px" }}>
-              Powered by Ollama LLM • {analysisStatus === "analyzing" ? "🔄 Analyzing..." : "🟢 Online"}
-            </p>
+            <div style={{ display: "flex", alignItems: "center", gap: "15px" }}>
+              <p style={{ margin: 0, color: "#adb5bd", fontSize: "14px" }}>
+                Powered by Ollama LLM • {analysisStatus === "analyzing" ? "🔄 Analyzing..." : "🟢 Online"}
+              </p>
+              <select
+                value={language}
+                onChange={(e) => setLanguage(e.target.value)}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: "8px",
+                  border: "1px solid rgba(255, 255, 255, 0.2)",
+                  background: "rgba(255, 255, 255, 0.1)",
+                  color: "#fff",
+                  fontSize: "13px",
+                  cursor: "pointer",
+                  outline: "none"
+                }}
+              >
+                <option value="en-US" style={{ background: "#2d2d2d" }}>🇺🇸 English</option>
+                <option value="hi-IN" style={{ background: "#2d2d2d" }}>🇮🇳 हिंदी (Hindi)</option>
+              </select>
+            </div>
           </div>
         </div>
         
@@ -732,9 +948,106 @@ ${urgency}
       }}>
         <div style={{
           display: "flex",
-          gap: "10px",
-          alignItems: "flex-end"
+          gap: "12px",
+          alignItems: "center"
         }}>
+          {/* Speak/Mute Toggle Button */}
+          <div style={{ position: "relative" }}>
+            <button
+              onClick={() => {
+                setAutoSpeak(!autoSpeak);
+                if (isSpeaking) stopSpeaking();
+              }}
+              style={{
+                width: "56px",
+                height: "56px",
+                borderRadius: "50%",
+                border: autoSpeak 
+                  ? "2px solid rgba(46, 204, 113, 0.5)"
+                  : "2px solid rgba(231, 76, 60, 0.5)",
+                background: autoSpeak
+                  ? "linear-gradient(135deg, #27ae60 0%, #2ecc71 100%)"
+                  : "linear-gradient(135deg, #95a5a6 0%, #7f8c8d 100%)",
+                color: "#fff",
+                fontSize: "24px",
+                cursor: "pointer",
+                transition: "all 0.3s ease",
+                boxShadow: autoSpeak
+                  ? "0 4px 12px rgba(46, 204, 113, 0.3)"
+                  : "0 4px 12px rgba(127, 140, 141, 0.3)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: 0
+              }}
+              onMouseOver={(e) => e.currentTarget.style.transform = "scale(1.1)"}
+              onMouseOut={(e) => e.currentTarget.style.transform = "scale(1)"}
+              title={autoSpeak ? "Voice enabled - Click to mute" : "Voice muted - Click to enable"}
+            >
+              {autoSpeak ? "🔊" : "🔇"}
+            </button>
+            <div style={{
+              position: "absolute",
+              bottom: "-25px",
+              left: "50%",
+              transform: "translateX(-50%)",
+              fontSize: "11px",
+              color: autoSpeak ? "#27ae60" : "#95a5a6",
+              fontWeight: "bold",
+              whiteSpace: "nowrap"
+            }}>
+              {autoSpeak ? "Voice ON" : "Voice OFF"}
+            </div>
+          </div>
+
+          {/* Voice Input Button */}
+          <div style={{ position: "relative" }}>
+            <button
+              onClick={isListening ? stopListening : startListening}
+              style={{
+                width: "56px",
+                height: "56px",
+                borderRadius: "50%",
+                border: isListening ? "3px solid #e74c3c" : "2px solid rgba(155, 89, 182, 0.5)",
+                background: isListening 
+                  ? "linear-gradient(135deg, #e74c3c 0%, #c0392b 100%)"
+                  : "linear-gradient(135deg, #9b59b6 0%, #8e44ad 100%)",
+                color: "#fff",
+                fontSize: "24px",
+                cursor: "pointer",
+                transition: "all 0.3s ease",
+                boxShadow: isListening 
+                  ? "0 0 20px rgba(231, 76, 60, 0.6)"
+                  : "0 4px 12px rgba(155, 89, 182, 0.3)",
+                transform: isListening ? "scale(1.05)" : "scale(1)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: 0
+              }}
+              onMouseOver={(e) => !isListening && (e.currentTarget.style.transform = "scale(1.1)")}
+              onMouseOut={(e) => !isListening && (e.currentTarget.style.transform = "scale(1)")}
+              title={isListening ? "Click to stop listening" : "Click to speak"}
+            >
+              {isListening ? "⏸️" : "🎤"}
+            </button>
+            {isListening && (
+              <div style={{
+                position: "absolute",
+                bottom: "-25px",
+                left: "50%",
+                transform: "translateX(-50%)",
+                fontSize: "11px",
+                color: "#e74c3c",
+                fontWeight: "bold",
+                whiteSpace: "nowrap",
+                animation: "pulse 1s infinite"
+              }}>
+                Listening...
+              </div>
+            )}
+          </div>
+
           <textarea
             value={inputMessage}
             onChange={(e) => setInputMessage(e.target.value)}
@@ -753,26 +1066,84 @@ ${urgency}
               resize: "none",
               outline: "none"
             }}
-            disabled={isTyping}
+            disabled={isTyping || isListening}
           />
+
+          {/* Stop Speaking Button */}
+          {isSpeaking && (
+            <div style={{ position: "relative" }}>
+              <button
+                onClick={stopSpeaking}
+                style={{
+                  width: "56px",
+                  height: "56px",
+                  borderRadius: "50%",
+                  border: "3px solid #f39c12",
+                  background: "linear-gradient(135deg, #f39c12 0%, #e67e22 100%)",
+                  color: "#fff",
+                  fontSize: "24px",
+                  cursor: "pointer",
+                  transition: "all 0.3s ease",
+                  boxShadow: "0 0 20px rgba(243, 156, 18, 0.6)",
+                  animation: "pulse 1s infinite",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: 0
+                }}
+                onMouseOver={(e) => e.currentTarget.style.transform = "scale(1.1)"}
+                onMouseOut={(e) => e.currentTarget.style.transform = "scale(1)"}
+                title="Stop AI voice"
+              >
+                🔇
+              </button>
+              <div style={{
+                position: "absolute",
+                bottom: "-25px",
+                left: "50%",
+                transform: "translateX(-50%)",
+                fontSize: "11px",
+                color: "#f39c12",
+                fontWeight: "bold",
+                whiteSpace: "nowrap",
+                animation: "pulse 1s infinite"
+              }}>
+                Speaking...
+              </div>
+            </div>
+          )}
+
+          {/* Send Button */}
           <button
             onClick={sendMessage}
             disabled={!inputMessage.trim() || isTyping}
             style={{
-              width: "50px",
-              height: "50px",
+              width: "56px",
+              height: "56px",
               borderRadius: "50%",
-              border: "none",
+              border: inputMessage.trim() && !isTyping
+                ? "2px solid rgba(52, 152, 219, 0.5)"
+                : "2px solid rgba(108, 117, 125, 0.3)",
               background: inputMessage.trim() && !isTyping 
                 ? "linear-gradient(135deg, #3498db 0%, #2ecc71 100%)"
                 : "rgba(108, 117, 125, 0.5)",
               color: "#fff",
-              fontSize: "20px",
+              fontSize: "24px",
               cursor: inputMessage.trim() && !isTyping ? "pointer" : "not-allowed",
-              transition: "all 0.3s ease"
+              transition: "all 0.3s ease",
+              boxShadow: inputMessage.trim() && !isTyping
+                ? "0 4px 12px rgba(52, 152, 219, 0.3)"
+                : "none",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 0
             }}
+            onMouseOver={(e) => inputMessage.trim() && !isTyping && (e.currentTarget.style.transform = "scale(1.1)")}
+            onMouseOut={(e) => inputMessage.trim() && !isTyping && (e.currentTarget.style.transform = "scale(1)")}
+            title="Send message"
           >
-            📤
+            ⬆️
           </button>
         </div>
       </div>
