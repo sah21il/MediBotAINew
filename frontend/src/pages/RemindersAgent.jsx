@@ -18,10 +18,74 @@ export default function RemindersAgent() {
   const [medicalCondition, setMedicalCondition] = useState("");
   const [aiRecommendations, setAiRecommendations] = useState("");
   const [alarms, setAlarms] = useState([]);
+  const [availableReports, setAvailableReports] = useState([]);
+  const [selectedReportId, setSelectedReportId] = useState("");
+  const [selectedSuggestions, setSelectedSuggestions] = useState([]);
 
   useEffect(() => {
     fetchReminders();
+    fetchAvailableReports();
+    
+    // Check if coming from Reports Agent with analysis
+    const reportData = localStorage.getItem('reportForReminders');
+    if (reportData) {
+      const report = JSON.parse(reportData);
+      // Extract medical condition and set it
+      setMedicalCondition(report.type || '');
+      setShowAddForm(true);
+      
+      // Auto-generate AI recommendations
+      setTimeout(() => {
+        axios.post("http://localhost:8000/api/reminders/ai-create", {
+          medical_condition: report.type,
+          report_analysis: report.analysis,
+          current_reminders: []
+        }).then(response => {
+          setAiRecommendations(response.data.suggestions || []);
+          setSelectedSuggestions([]);
+        }).catch(error => {
+          console.error("Error getting AI recommendations:", error);
+        });
+      }, 500);
+      
+      // Clear the localStorage
+      localStorage.removeItem('reportForReminders');
+    }
   }, []);
+
+  const fetchAvailableReports = async () => {
+    try {
+      const response = await axios.get("http://localhost:8000/api/medical-records/list");
+      setAvailableReports(response.data.records || []);
+    } catch (error) {
+      console.error("Error fetching reports:", error);
+    }
+  };
+
+  const handleReportSelection = async (recordId) => {
+    setSelectedReportId(recordId);
+    const selectedReport = availableReports.find(r => r.record_id === recordId);
+    
+    if (selectedReport) {
+      setMedicalCondition(selectedReport.test_type || '');
+      
+      // Auto-generate AI recommendations based on report
+      setLoading(true);
+      try {
+        const response = await axios.post("http://localhost:8000/api/reminders/ai-create", {
+          medical_condition: selectedReport.test_type,
+          report_analysis: selectedReport.ai_summary,
+          patient_name: selectedReport.patient_name,
+          current_reminders: reminders.map(r => ({ type: r.type, title: r.title }))
+        });
+        setAiRecommendations(response.data.suggestions || []);
+        setSelectedSuggestions([]);
+      } catch (error) {
+        console.error("Error getting AI recommendations:", error);
+      }
+      setLoading(false);
+    }
+  };
 
   const fetchReminders = async () => {
     try {
@@ -96,6 +160,30 @@ export default function RemindersAgent() {
     setLoading(false);
   };
 
+  const aiAutoComplete = async (title) => {
+    if (!title || title.length < 5) return;
+    
+    try {
+      const response = await axios.post("http://localhost:8000/api/reminders/ai-autocomplete", {
+        title: title,
+        type: newReminder.type,
+        medical_condition: medicalCondition
+      });
+      
+      if (response.data.description) {
+        setNewReminder(prev => ({
+          ...prev,
+          description: response.data.description,
+          time: response.data.time || prev.time,
+          priority: response.data.priority || prev.priority,
+          frequency: response.data.frequency || prev.frequency
+        }));
+      }
+    } catch (error) {
+      console.error("AI autocomplete error:", error);
+    }
+  };
+
   const getAiRecommendations = async () => {
     if (!medicalCondition.trim()) {
       alert("Please enter a medical condition first");
@@ -110,38 +198,45 @@ export default function RemindersAgent() {
         current_reminders: reminders.map(r => ({ type: r.type, title: r.title }))
       });
       console.log("AI recommendations response:", response.data);
-      setAiRecommendations(response.data.recommendations);
+      setAiRecommendations(response.data.suggestions || []);
+      setSelectedSuggestions([]);
     } catch (error) {
       console.error("Error getting AI recommendations:", error);
-      setAiRecommendations("Error getting AI recommendations: " + (error.response?.data?.detail || error.message));
+      alert("Error getting AI recommendations: " + (error.response?.data?.detail || error.message));
     }
     setLoading(false);
   };
 
-  const createAiReminders = async () => {
-    if (!medicalCondition.trim()) {
-      alert("Please enter a medical condition first");
-      return;
-    }
+  const toggleSuggestion = (index) => {
+    setSelectedSuggestions(prev => 
+      prev.includes(index) 
+        ? prev.filter(i => i !== index)
+        : [...prev, index]
+    );
+  };
+
+  const createSelectedReminders = async () => {
+    if (selectedSuggestions.length === 0) return;
     
     try {
-      console.log("Sending request to create AI reminders...");
-      const response = await axios.post("http://localhost:8000/api/reminders/ai-bulk-create", {
-        medical_condition: medicalCondition
-      });
+      const selectedReminders = selectedSuggestions.map(index => aiRecommendations[index]);
       
-      console.log("AI reminders response:", response.data);
+      for (const suggestion of selectedReminders) {
+        const response = await axios.post("http://localhost:8000/api/reminders", suggestion);
+        setReminders(prev => [response.data, ...prev]);
+      }
       
-      // Add all AI-created reminders to the list
-      setReminders(prev => [...response.data.reminders, ...prev]);
-      setAiRecommendations("");
+      alert(`Successfully created ${selectedSuggestions.length} reminder${selectedSuggestions.length !== 1 ? 's' : ''}!`);
+      setAiRecommendations([]);
+      setSelectedSuggestions([]);
       setMedicalCondition("");
-      alert(`Created ${response.data.reminders.length} AI-recommended reminders!`);
     } catch (error) {
-      console.error("Error creating AI reminders:", error);
-      alert("Error creating AI reminders: " + (error.response?.data?.detail || error.message));
+      console.error("Error creating reminders:", error);
+      alert("Error creating reminders: " + (error.response?.data?.detail || error.message));
     }
   };
+
+
 
   const getReminderIcon = (type) => {
     switch(type) {
@@ -407,14 +502,83 @@ export default function RemindersAgent() {
           }}>
             <h2 style={{ color: "#e9ecef", marginBottom: "20px" }}>➕ Add New Reminder</h2>
             
+            {/* AI Smart Reminder Banner */}
+            <div style={{
+              padding: "15px",
+              background: "linear-gradient(135deg, #f39c12 0%, #e67e22 100%)",
+              borderRadius: "10px",
+              marginBottom: "20px",
+              border: "2px solid rgba(243, 156, 18, 0.5)"
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "10px" }}>
+                <span style={{ fontSize: "24px" }}>🧠</span>
+                <h3 style={{ margin: 0, color: "white" }}>AI Smart Reminders</h3>
+              </div>
+              <p style={{ margin: 0, color: "white", fontSize: "14px", opacity: 0.9 }}>
+                Enter a medical condition or upload a report from Reports Agent to get AI-powered medication reminders!
+              </p>
+            </div>
+
+            {/* Select from Uploaded Reports */}
+            <div style={{ marginBottom: "15px" }}>
+              <label style={{ color: "#e9ecef", display: "block", marginBottom: "5px" }}>
+                📄 Select from Uploaded Reports:
+              </label>
+              <select
+                value={selectedReportId}
+                onChange={(e) => handleReportSelection(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "10px",
+                  borderRadius: "8px",
+                  border: "1px solid rgba(255, 255, 255, 0.2)",
+                  background: "#2d2d2d",
+                  color: "#fff",
+                  cursor: "pointer"
+                }}
+              >
+                <option value="" style={{ background: "#2d2d2d" }}>-- Select a report --</option>
+                {availableReports.map(report => (
+                  <option 
+                    key={report.record_id} 
+                    value={report.record_id}
+                    style={{ background: "#2d2d2d" }}
+                  >
+                    {report.patient_name} - {report.test_type} ({report.test_date})
+                  </option>
+                ))}
+              </select>
+              {availableReports.length === 0 && (
+                <p style={{ color: "#adb5bd", fontSize: "12px", marginTop: "5px" }}>
+                  No reports uploaded yet. Upload reports in Reports Agent first.
+                </p>
+              )}
+            </div>
+
+            <div style={{ 
+              textAlign: "center", 
+              color: "#adb5bd", 
+              fontSize: "14px", 
+              margin: "15px 0",
+              display: "flex",
+              alignItems: "center",
+              gap: "10px"
+            }}>
+              <div style={{ flex: 1, height: "1px", background: "rgba(255,255,255,0.1)" }}></div>
+              OR
+              <div style={{ flex: 1, height: "1px", background: "rgba(255,255,255,0.1)" }}></div>
+            </div>
+
             {/* Medical Condition Input */}
             <div style={{ marginBottom: "15px" }}>
-              <label style={{ color: "#e9ecef", display: "block", marginBottom: "5px" }}>Medical Condition (Optional):</label>
+              <label style={{ color: "#e9ecef", display: "block", marginBottom: "5px" }}>
+                ✏️ Enter Medical Condition Manually:
+              </label>
               <input
                 type="text"
                 value={medicalCondition}
                 onChange={(e) => setMedicalCondition(e.target.value)}
-                placeholder="e.g., Diabetes, Hypertension, Heart Disease"
+                placeholder="e.g., Diabetes, Hypertension, Blood Test Results"
                 style={{
                   width: "100%",
                   padding: "10px",
@@ -450,37 +614,55 @@ export default function RemindersAgent() {
             </div>
 
             <div style={{ marginBottom: "15px" }}>
-              <label style={{ color: "#e9ecef", display: "block", marginBottom: "5px" }}>Title:</label>
+              <label style={{ color: "#e9ecef", display: "block", marginBottom: "5px" }}>
+                Title: 
+                <span style={{ color: "#f39c12", fontSize: "12px", marginLeft: "10px" }}>
+                  🧠 AI will auto-complete details
+                </span>
+              </label>
               <input
                 type="text"
                 value={newReminder.title}
-                onChange={(e) => setNewReminder({...newReminder, title: e.target.value})}
-                placeholder="e.g., Take Metformin, Doctor Appointment"
+                onChange={(e) => {
+                  setNewReminder({...newReminder, title: e.target.value});
+                  // Trigger AI autocomplete after user stops typing
+                  clearTimeout(window.aiAutoCompleteTimer);
+                  window.aiAutoCompleteTimer = setTimeout(() => {
+                    aiAutoComplete(e.target.value);
+                  }, 1000);
+                }}
+                placeholder="e.g., Take Metformin 500mg, Doctor Appointment"
                 style={{
                   width: "100%",
                   padding: "10px",
                   borderRadius: "8px",
-                  border: "1px solid rgba(255, 255, 255, 0.2)",
+                  border: "2px solid rgba(243, 156, 18, 0.5)",
                   background: "rgba(255, 255, 255, 0.1)",
-                  color: "#fff"
+                  color: "#fff",
+                  boxShadow: "0 0 10px rgba(243, 156, 18, 0.2)"
                 }}
               />
             </div>
 
             <div style={{ marginBottom: "15px" }}>
-              <label style={{ color: "#e9ecef", display: "block", marginBottom: "5px" }}>Description:</label>
+              <label style={{ color: "#e9ecef", display: "block", marginBottom: "5px" }}>
+                Description:
+                <span style={{ color: "#27ae60", fontSize: "12px", marginLeft: "10px" }}>
+                  {newReminder.description && "✅ AI Generated"}
+                </span>
+              </label>
               <textarea
                 value={newReminder.description}
                 onChange={(e) => setNewReminder({...newReminder, description: e.target.value})}
-                placeholder="Additional details, dosage, location, etc."
+                placeholder="AI will suggest dosage, timing, and instructions..."
                 style={{
                   width: "100%",
                   padding: "10px",
                   borderRadius: "8px",
-                  border: "1px solid rgba(255, 255, 255, 0.2)",
+                  border: newReminder.description ? "2px solid rgba(39, 174, 96, 0.5)" : "1px solid rgba(255, 255, 255, 0.2)",
                   background: "rgba(255, 255, 255, 0.1)",
                   color: "#fff",
-                  minHeight: "60px",
+                  minHeight: "80px",
                   resize: "vertical"
                 }}
               />
@@ -488,7 +670,12 @@ export default function RemindersAgent() {
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "15px", marginBottom: "15px" }}>
               <div>
-                <label style={{ color: "#e9ecef", display: "block", marginBottom: "5px" }}>Time:</label>
+                <label style={{ color: "#e9ecef", display: "block", marginBottom: "5px" }}>
+                  Time:
+                  <span style={{ color: "#3498db", fontSize: "12px", marginLeft: "10px" }}>
+                    {newReminder.time && "🕰️ AI Suggested"}
+                  </span>
+                </label>
                 <input
                   type="time"
                   value={newReminder.time}
@@ -497,7 +684,7 @@ export default function RemindersAgent() {
                     width: "100%",
                     padding: "10px",
                     borderRadius: "8px",
-                    border: "1px solid rgba(255, 255, 255, 0.2)",
+                    border: newReminder.time ? "2px solid rgba(52, 152, 219, 0.5)" : "1px solid rgba(255, 255, 255, 0.2)",
                     background: "rgba(255, 255, 255, 0.1)",
                     color: "#fff"
                   }}
@@ -527,7 +714,12 @@ export default function RemindersAgent() {
             </div>
 
             <div style={{ marginBottom: "20px" }}>
-              <label style={{ color: "#e9ecef", display: "block", marginBottom: "5px" }}>Priority:</label>
+              <label style={{ color: "#e9ecef", display: "block", marginBottom: "5px" }}>
+                Priority:
+                <span style={{ color: "#9b59b6", fontSize: "12px", marginLeft: "10px" }}>
+                  🧠 AI Determined
+                </span>
+              </label>
               <select
                 value={newReminder.priority}
                 onChange={(e) => setNewReminder({...newReminder, priority: e.target.value})}
@@ -535,7 +727,7 @@ export default function RemindersAgent() {
                   width: "100%",
                   padding: "10px",
                   borderRadius: "8px",
-                  border: "1px solid rgba(255, 255, 255, 0.2)",
+                  border: "2px solid rgba(155, 89, 182, 0.5)",
                   background: "#2d2d2d",
                   color: "#fff"
                 }}
@@ -581,7 +773,7 @@ export default function RemindersAgent() {
                     opacity: loading || !medicalCondition ? 0.5 : 1
                   }}
                 >
-                  {loading ? "🔄 Creating..." : "🧠 AI Create Reminders"}
+                  {loading ? "🔄 Analyzing..." : "🧠 Create AI Reminders"}
                 </button>
               </div>
               
@@ -601,36 +793,135 @@ export default function RemindersAgent() {
                 </div>
               )}
               
-              {aiRecommendations && (
+              {aiRecommendations && Array.isArray(aiRecommendations) && aiRecommendations.length > 0 && (
                 <div style={{
-                  padding: "15px",
+                  padding: "20px",
                   background: "rgba(155, 89, 182, 0.1)",
-                  border: "1px solid rgba(155, 89, 182, 0.3)",
-                  borderRadius: "8px",
-                  color: "#e9ecef",
-                  fontSize: "14px",
-                  whiteSpace: "pre-wrap",
+                  border: "2px solid rgba(155, 89, 182, 0.3)",
+                  borderRadius: "12px",
                   marginBottom: "15px"
                 }}>
-                  <strong>🧠 AI Recommended Reminders:</strong><br/>
-                  {aiRecommendations}
-                  <div style={{ marginTop: "10px" }}>
+                  <div style={{ marginBottom: "15px" }}>
+                    <h3 style={{ color: "#e9ecef", margin: "0 0 5px 0", fontSize: "18px" }}>
+                      🧠 AI Recommended Reminders
+                    </h3>
+                    <p style={{ color: "#adb5bd", margin: 0, fontSize: "13px" }}>
+                      Select the reminders you want to create:
+                    </p>
+                  </div>
+                  
+                  <div style={{ maxHeight: "400px", overflowY: "auto" }}>
+                    {aiRecommendations.map((suggestion, index) => (
+                      <div
+                        key={index}
+                        style={{
+                          padding: "15px",
+                          margin: "10px 0",
+                          background: selectedSuggestions.includes(index) 
+                            ? "rgba(46, 204, 113, 0.15)" 
+                            : "rgba(255, 255, 255, 0.05)",
+                          border: selectedSuggestions.includes(index)
+                            ? "2px solid rgba(46, 204, 113, 0.5)"
+                            : "1px solid rgba(255, 255, 255, 0.1)",
+                          borderRadius: "10px",
+                          cursor: "pointer",
+                          transition: "all 0.2s"
+                        }}
+                        onClick={() => toggleSuggestion(index)}
+                      >
+                        <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
+                          <input
+                            type="checkbox"
+                            checked={selectedSuggestions.includes(index)}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              toggleSuggestion(index);
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            style={{
+                              width: "20px",
+                              height: "20px",
+                              cursor: "pointer",
+                              marginTop: "2px",
+                              accentColor: "#27ae60"
+                            }}
+                          />
+                          <div style={{ flex: 1 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+                              <span style={{ fontSize: "20px" }}>{getReminderIcon(suggestion.type)}</span>
+                              <h4 style={{ margin: 0, color: "#e9ecef", fontSize: "15px" }}>
+                                {suggestion.title}
+                              </h4>
+                              <div style={{
+                                padding: "3px 8px",
+                                borderRadius: "10px",
+                                background: getPriorityColor(suggestion.priority),
+                                color: "white",
+                                fontSize: "10px",
+                                fontWeight: "bold"
+                              }}>
+                                {suggestion.priority.toUpperCase()}
+                              </div>
+                            </div>
+                            <p style={{ margin: "0 0 8px 0", color: "#adb5bd", fontSize: "13px" }}>
+                              {suggestion.description}
+                            </p>
+                            <div style={{ display: "flex", gap: "12px", fontSize: "11px", color: "#6c757d" }}>
+                              <span>🕐 {suggestion.time}</span>
+                              <span>🔄 {suggestion.frequency}</span>
+                            </div>
+                            <div style={{
+                              marginTop: "8px",
+                              padding: "8px",
+                              background: "rgba(52, 152, 219, 0.1)",
+                              borderRadius: "6px",
+                              fontSize: "11px",
+                              color: "#3498db"
+                            }}>
+                              💡 {suggestion.reason}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  
+                  <div style={{ marginTop: "15px", display: "flex", gap: "10px" }}>
                     <button
-                      onClick={() => {
-                        console.log("Creating AI reminders for:", medicalCondition);
-                        createAiReminders();
-                      }}
+                      onClick={createSelectedReminders}
+                      disabled={selectedSuggestions.length === 0}
                       style={{
-                        padding: "8px 16px",
-                        background: "linear-gradient(135deg, #27ae60 0%, #2ecc71 100%)",
+                        flex: 1,
+                        padding: "12px 16px",
+                        background: selectedSuggestions.length > 0
+                          ? "linear-gradient(135deg, #27ae60 0%, #2ecc71 100%)"
+                          : "#6c757d",
                         color: "white",
                         border: "none",
-                        borderRadius: "6px",
-                        fontSize: "12px",
+                        borderRadius: "8px",
+                        fontSize: "14px",
+                        fontWeight: "bold",
+                        cursor: selectedSuggestions.length > 0 ? "pointer" : "not-allowed"
+                      }}
+                    >
+                      ✅ Create {selectedSuggestions.length} Selected Reminder{selectedSuggestions.length !== 1 ? 's' : ''}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setAiRecommendations([]);
+                        setSelectedSuggestions([]);
+                      }}
+                      style={{
+                        padding: "12px 16px",
+                        background: "#6c757d",
+                        color: "white",
+                        border: "none",
+                        borderRadius: "8px",
+                        fontSize: "14px",
                         cursor: "pointer"
                       }}
                     >
-                      ✅ Create These Reminders
+                      ✕ Cancel
                     </button>
                   </div>
                 </div>

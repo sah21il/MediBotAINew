@@ -5,6 +5,7 @@ import requests
 import random
 import time
 import math
+# from gemini_client import get_gemini_response, get_medical_analysis
 
 from agents.health_agent import HealthAgent
 from agents.ingest_agent import IngestAgent
@@ -13,6 +14,8 @@ from coordinator.message_bus import MessageBus
 from coordinator.message import Message
 from reports_agent import setup_reports_agent
 from reminders_agent import setup_reminders_agent
+from chat_endpoint import handle_chat
+from medical_records_system import setup_medical_records_system
 
 # Initialize FastAPI
 app = FastAPI(title="MediBot AI Backend")
@@ -41,6 +44,9 @@ setup_reports_agent(app)
 
 # Setup Reminders Agent
 setup_reminders_agent(app)
+
+# Setup Medical Records System
+setup_medical_records_system(app)
 
 # ---------------------------
 # Pydantic Models for API
@@ -151,5 +157,14 @@ def analyze_vitals_assistant(request: dict):
     vitals = request.get("vitals", {})
     analysis = doctor_assistant.analyze_vitals(vitals)
     return {"analysis": analysis}
+
+@app.post("/api/doctor-assistant/chat")
+def chat_with_assistant(request: dict):
+    """
+    Chat endpoint with medical context filtering
+    """
+    query = request.get("message", "")
+    response = handle_chat(query)
+    return {"response": response}
 
 

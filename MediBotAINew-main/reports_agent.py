@@ -136,6 +136,10 @@ async def upload_report(file: UploadFile = File(...)):
         print(f"Upload error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Upload error: {str(e)}")
 
+def remove_markdown(text: str) -> str:
+    """Remove markdown asterisks from text"""
+    return text.replace('**', '')
+
 def generate_report_analysis(report_type: str, data: Dict[str, Any]) -> str:
     """Generate AI analysis for different report types"""
     
@@ -284,7 +288,7 @@ def generate_report_analysis(report_type: str, data: Dict[str, Any]) -> str:
         analysis += "**AI Assessment:**\n• Report reviewed and processed\n• Clinical correlation recommended\n• Follow standard protocols\n\n"
         analysis += "**Next Steps:**\n• Review with attending physician\n• Consider additional testing if indicated\n• Monitor patient response"
     
-    return analysis
+    return remove_markdown(analysis)
 
 def generate_mock_report_data(report_type: str) -> Dict[str, Any]:
     """Generate mock data for different report types"""

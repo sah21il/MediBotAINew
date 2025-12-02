@@ -8,6 +8,7 @@ import json
 import uuid
 from datetime import datetime, timedelta
 import random
+# from gemini_client import get_reminder_suggestions, get_condition_reminders
 
 router = APIRouter()
 
@@ -150,17 +151,35 @@ async def get_ai_reminder_recommendations(request: AICreateRequest):
     """Get AI recommendations for creating reminders based on medical condition"""
     try:
         condition = request.medical_condition.lower()
+        report_analysis = request.dict().get('report_analysis', '')
+        patient_name = request.dict().get('patient_name', '')
         current_reminders = request.current_reminders
         
-        recommendations = generate_condition_reminders(condition, current_reminders)
+        # Generate structured reminder suggestions
+        suggestions = generate_structured_reminders(condition, report_analysis, current_reminders)
         
         return {
-            "recommendations": recommendations,
+            "suggestions": suggestions,
             "condition": request.medical_condition,
+            "patient_name": patient_name,
             "timestamp": datetime.now().isoformat()
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI recommendation error: {str(e)}")
+
+@router.post("/api/reminders/ai-autocomplete")
+async def ai_autocomplete_reminder(request: dict):
+    """AI autocomplete for reminder details based on title"""
+    try:
+        title = request.get('title', '').lower()
+        reminder_type = request.get('type', 'medication')
+        condition = request.get('medical_condition', '').lower()
+        
+        result = generate_autocomplete_suggestions(title, reminder_type, condition)
+        
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI autocomplete error: {str(e)}")
 
 @router.post("/api/reminders/ai-bulk-create")
 async def create_ai_bulk_reminders(request: AIBulkCreateRequest):
@@ -436,6 +455,346 @@ def generate_condition_reminders(condition: str, current_reminders: List[Dict]) 
     
     recommendations += "\n**Click 'Create These Reminders' to automatically add them to your schedule!**"
     return recommendations
+
+def generate_autocomplete_suggestions(title: str, reminder_type: str, condition: str) -> Dict:
+    """Generate AI suggestions for description, time, and priority based on title"""
+    
+    result = {
+        "description": "",
+        "time": "",
+        "priority": "medium",
+        "frequency": "daily"
+    }
+    
+    # Medication-specific autocomplete
+    if "metformin" in title:
+        result["description"] = "Take 500mg with meals to reduce GI side effects. Monitor blood glucose levels."
+        result["time"] = "08:00"
+        result["priority"] = "high"
+        result["frequency"] = "daily"
+    elif "insulin" in title:
+        result["description"] = "Check blood glucose before injection. Rotate injection sites. Keep glucose tablets handy."
+        result["time"] = "07:30"
+        result["priority"] = "high"
+        result["frequency"] = "daily"
+    elif "lisinopril" in title or "ace inhibitor" in title:
+        result["description"] = "Blood pressure medication. Take at same time daily. Monitor for dizziness."
+        result["time"] = "08:00"
+        result["priority"] = "high"
+        result["frequency"] = "daily"
+    elif "amlodipine" in title or "calcium channel" in title:
+        result["description"] = "BP medication. May cause ankle swelling. Take with or without food."
+        result["time"] = "08:00"
+        result["priority"] = "high"
+        result["frequency"] = "daily"
+    elif "aspirin" in title:
+        result["description"] = "Take with food to prevent stomach upset. Low-dose for heart protection."
+        result["time"] = "08:00"
+        result["priority"] = "high"
+        result["frequency"] = "daily"
+    elif "statin" in title or "atorvastatin" in title or "simvastatin" in title:
+        result["description"] = "Cholesterol medication. Take in evening for best effect. Report muscle pain."
+        result["time"] = "20:00"
+        result["priority"] = "high"
+        result["frequency"] = "daily"
+    elif "vitamin" in title:
+        result["description"] = "Take with food for better absorption. Stay consistent with timing."
+        result["time"] = "09:00"
+        result["priority"] = "low"
+        result["frequency"] = "daily"
+    elif "blood sugar" in title or "glucose" in title:
+        result["description"] = "Fasting blood glucose test. Record results in log. Target: 70-130 mg/dL."
+        result["time"] = "07:00"
+        result["priority"] = "high"
+        result["frequency"] = "daily"
+    elif "blood pressure" in title or "bp check" in title:
+        result["description"] = "Sit quietly for 5 minutes before measuring. Record both readings."
+        result["time"] = "08:30"
+        result["priority"] = "high"
+        result["frequency"] = "daily"
+    elif "walk" in title or "walking" in title:
+        result["description"] = "30-minute brisk walk. Wear comfortable shoes. Stay hydrated."
+        result["time"] = "07:30"
+        result["priority"] = "medium"
+        result["frequency"] = "daily"
+    elif "exercise" in title or "workout" in title:
+        result["description"] = "Moderate intensity exercise. Warm up and cool down. Check BP if needed."
+        result["time"] = "07:00"
+        result["priority"] = "medium"
+        result["frequency"] = "daily"
+    elif "doctor" in title or "appointment" in title:
+        result["description"] = "Bring medication list, insurance card, and list of questions. Arrive 15 min early."
+        result["time"] = "09:00"
+        result["priority"] = "high"
+        result["frequency"] = "as-needed"
+    elif "meal" in title or "diet" in title:
+        result["description"] = "Healthy balanced meal. Include protein, vegetables, and whole grains."
+        result["time"] = "12:00"
+        result["priority"] = "medium"
+        result["frequency"] = "daily"
+    else:
+        # Generic medication reminder
+        if reminder_type == "medication":
+            result["description"] = "Take as prescribed. Set alarm 15 minutes before. Don't skip doses."
+            result["time"] = "08:00"
+            result["priority"] = "high"
+        elif reminder_type == "appointment":
+            result["description"] = "Bring necessary documents. Arrive early. Prepare questions."
+            result["time"] = "09:00"
+            result["priority"] = "high"
+        elif reminder_type == "exercise":
+            result["description"] = "Stay active for better health. Start slow and build consistency."
+            result["time"] = "07:30"
+            result["priority"] = "medium"
+        elif reminder_type == "checkup":
+            result["description"] = "Regular health monitoring. Track results over time."
+            result["time"] = "08:00"
+            result["priority"] = "medium"
+    
+    return result
+
+def generate_structured_reminders(condition: str, report_analysis: str, current_reminders: List[Dict]) -> List[Dict]:
+    """Generate structured reminder suggestions with all details for checkbox selection"""
+    
+    suggestions = []
+    
+    if "diabetes" in condition or "glucose" in condition or "hba1c" in condition:
+        suggestions.extend([
+            {
+                "type": "medication",
+                "title": "Take Metformin 500mg",
+                "description": "Take with breakfast to reduce GI side effects. Monitor blood glucose levels.",
+                "time": "08:00",
+                "frequency": "daily",
+                "priority": "high",
+                "reason": "Essential for blood sugar control in diabetes management"
+            },
+            {
+                "type": "checkup",
+                "title": "Check Fasting Blood Sugar",
+                "description": "Test before breakfast. Target: 70-130 mg/dL. Record in log.",
+                "time": "07:00",
+                "frequency": "daily",
+                "priority": "high",
+                "reason": "Daily monitoring helps track diabetes control"
+            },
+            {
+                "type": "checkup",
+                "title": "Post-Meal Glucose Check",
+                "description": "Test 2 hours after lunch. Target: <180 mg/dL.",
+                "time": "14:00",
+                "frequency": "daily",
+                "priority": "medium",
+                "reason": "Monitors how meals affect blood sugar"
+            },
+            {
+                "type": "exercise",
+                "title": "30-Minute Morning Walk",
+                "description": "Brisk walk to improve insulin sensitivity. Wear comfortable shoes.",
+                "time": "07:30",
+                "frequency": "daily",
+                "priority": "medium",
+                "reason": "Exercise improves blood sugar control"
+            },
+            {
+                "type": "diet",
+                "title": "Healthy Meal Planning",
+                "description": "Plan low-carb, high-fiber meals. Include vegetables and lean protein.",
+                "time": "18:00",
+                "frequency": "weekly",
+                "priority": "medium",
+                "reason": "Proper diet is crucial for diabetes management"
+            },
+            {
+                "type": "appointment",
+                "title": "Endocrinologist Follow-up",
+                "description": "Bring glucose log and medication list. Discuss HbA1c results.",
+                "time": "09:00",
+                "frequency": "monthly",
+                "priority": "high",
+                "reason": "Regular monitoring by specialist"
+            }
+        ])
+        
+    elif "hypertension" in condition or "blood pressure" in condition or "bp" in condition:
+        suggestions.extend([
+            {
+                "type": "medication",
+                "title": "Take BP Medication (Lisinopril)",
+                "description": "ACE inhibitor for blood pressure control. Take at same time daily.",
+                "time": "08:00",
+                "frequency": "daily",
+                "priority": "high",
+                "reason": "Critical for maintaining healthy blood pressure"
+            },
+            {
+                "type": "checkup",
+                "title": "Morning Blood Pressure Check",
+                "description": "Sit quietly for 5 min before measuring. Target: <130/80 mmHg.",
+                "time": "08:30",
+                "frequency": "daily",
+                "priority": "high",
+                "reason": "Daily monitoring tracks treatment effectiveness"
+            },
+            {
+                "type": "checkup",
+                "title": "Evening Blood Pressure Check",
+                "description": "Second daily reading. Record both systolic and diastolic.",
+                "time": "18:00",
+                "frequency": "daily",
+                "priority": "medium",
+                "reason": "Tracks BP variation throughout day"
+            },
+            {
+                "type": "diet",
+                "title": "Low-Sodium Meal Prep",
+                "description": "DASH diet: <2300mg sodium/day. Use herbs instead of salt.",
+                "time": "17:00",
+                "frequency": "weekly",
+                "priority": "high",
+                "reason": "Low sodium diet reduces blood pressure"
+            },
+            {
+                "type": "exercise",
+                "title": "Cardio Exercise",
+                "description": "30 min moderate activity. Walking, cycling, or swimming.",
+                "time": "07:00",
+                "frequency": "daily",
+                "priority": "medium",
+                "reason": "Regular exercise lowers blood pressure"
+            }
+        ])
+        
+    elif "cholesterol" in condition or "lipid" in condition or "ldl" in condition:
+        suggestions.extend([
+            {
+                "type": "medication",
+                "title": "Take Statin (Evening)",
+                "description": "Atorvastatin or prescribed statin. Take in evening for best effect.",
+                "time": "20:00",
+                "frequency": "daily",
+                "priority": "high",
+                "reason": "Statins work best when taken at night"
+            },
+            {
+                "type": "diet",
+                "title": "Heart-Healthy Diet",
+                "description": "Low saturated fat, high fiber. Include oats, nuts, fish.",
+                "time": "12:00",
+                "frequency": "daily",
+                "priority": "high",
+                "reason": "Diet significantly impacts cholesterol levels"
+            },
+            {
+                "type": "exercise",
+                "title": "Aerobic Exercise",
+                "description": "45 min moderate intensity. Helps raise HDL (good cholesterol).",
+                "time": "07:00",
+                "frequency": "daily",
+                "priority": "medium",
+                "reason": "Exercise improves cholesterol profile"
+            }
+        ])
+        
+    elif "thyroid" in condition or "tsh" in condition:
+        suggestions.extend([
+            {
+                "type": "medication",
+                "title": "Take Thyroid Medication",
+                "description": "Levothyroxine on empty stomach. Wait 30 min before eating.",
+                "time": "06:30",
+                "frequency": "daily",
+                "priority": "high",
+                "reason": "Must be taken on empty stomach for absorption"
+            },
+            {
+                "type": "appointment",
+                "title": "Thyroid Function Test",
+                "description": "TSH blood test to monitor thyroid levels.",
+                "time": "09:00",
+                "frequency": "monthly",
+                "priority": "medium",
+                "reason": "Regular monitoring ensures proper dosing"
+            }
+        ])
+        
+    elif "vitamin" in condition or "deficiency" in condition:
+        suggestions.extend([
+            {
+                "type": "medication",
+                "title": "Take Vitamin D Supplement",
+                "description": "1000 IU with breakfast for better absorption.",
+                "time": "09:00",
+                "frequency": "daily",
+                "priority": "medium",
+                "reason": "Corrects vitamin D deficiency"
+            },
+            {
+                "type": "medication",
+                "title": "Take B12 Supplement",
+                "description": "Sublingual B12 or oral supplement.",
+                "time": "09:00",
+                "frequency": "daily",
+                "priority": "medium",
+                "reason": "Addresses B12 deficiency"
+            }
+        ])
+        
+    elif "anemia" in condition or "iron" in condition or "hemoglobin" in condition:
+        suggestions.extend([
+            {
+                "type": "medication",
+                "title": "Take Iron Supplement",
+                "description": "Take with vitamin C for better absorption. Avoid with tea/coffee.",
+                "time": "09:00",
+                "frequency": "daily",
+                "priority": "high",
+                "reason": "Treats iron deficiency anemia"
+            },
+            {
+                "type": "diet",
+                "title": "Iron-Rich Foods",
+                "description": "Include spinach, red meat, lentils, fortified cereals.",
+                "time": "12:00",
+                "frequency": "daily",
+                "priority": "medium",
+                "reason": "Dietary iron supports hemoglobin production"
+            }
+        ])
+        
+    else:
+        # Generic health reminders
+        suggestions.extend([
+            {
+                "type": "medication",
+                "title": "Take Prescribed Medication",
+                "description": "Follow doctor's instructions. Don't skip doses.",
+                "time": "08:00",
+                "frequency": "daily",
+                "priority": "high",
+                "reason": "Medication adherence is crucial for treatment"
+            },
+            {
+                "type": "exercise",
+                "title": "Daily Physical Activity",
+                "description": "30 minutes of moderate exercise. Walking, yoga, or swimming.",
+                "time": "07:30",
+                "frequency": "daily",
+                "priority": "medium",
+                "reason": "Regular exercise improves overall health"
+            },
+            {
+                "type": "appointment",
+                "title": "Doctor Follow-up",
+                "description": "Bring test results and medication list.",
+                "time": "09:00",
+                "frequency": "monthly",
+                "priority": "high",
+                "reason": "Regular monitoring by healthcare provider"
+            }
+        ])
+    
+    return suggestions
 
 def create_condition_based_reminders(condition: str) -> List[Dict]:
     """Create actual reminder objects based on medical condition"""
